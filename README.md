@@ -22,15 +22,17 @@ If you're not logged in, the mod does nothing except print a reminder at launch.
 
 1. Install [SMAPI](https://smapi.io) 4.0+ (game version 1.6+).
 2. Unzip the release into your `Stardew Valley/Mods` folder.
-3. Launch the game once so `config.json` is generated, then set `BaseUrl` to the website's URL.
+3. Launch the game once so `config.json` is generated, then set `LoginUrl` and `SaveUrl` to
+   the website's URLs.
 4. Run `savefetch_login` in the SMAPI console and log in through your browser.
 
 ## Configuration (`config.json`)
 
-| Setting        | Default                | What it does                                                                 |
-| -------------- | ---------------------- | ---------------------------------------------------------------------------- |
-| `BaseUrl`      | `https://example.test` | Root URL of the companion website. **You must change this** — the default is a placeholder. |
-| `CallbackPort` | `0`                    | Fixed TCP port for the login callback listener. `0` picks any free port automatically; set a fixed one only if you need a firewall rule or are testing by hand. |
+| Setting        | Default                          | What it does                                                                 |
+| -------------- | -------------------------------- | ---------------------------------------------------------------------------- |
+| `LoginUrl`     | `https://example.test/mod-auth`  | Full URL of the website's mod-login page — the browser opens here with `?port=&state=` appended. **You must change this** — the default is a placeholder. |
+| `SaveUrl`      | `https://example.test/api/saves` | Full URL the save summary is POSTed to (Bearer auth). Separate from `LoginUrl` so the API can live on a different host or path. |
+| `CallbackPort` | `0`                              | Fixed TCP port for the login callback listener. `0` picks any free port automatically; set a fixed one only if you need a firewall rule or are testing by hand. |
 
 The access token is deliberately **not** in this file — see step 2 above.
 
@@ -64,7 +66,8 @@ your `Mods` folder, and produces a release zip under `bin/Debug/net6.0/`.
 
 ## Server API
 
-The website must expose two routes:
+The website must expose two routes (the paths below are suggestions — the mod reads the full
+URLs from `config.json`, so name them whatever you like):
 
 - `GET /mod-auth?port=&state=` — web route: log the user in via the normal web session, issue
   a personal access token, then redirect to
@@ -80,4 +83,4 @@ The website must expose two routes:
 3. Simulate the site's redirect by opening
    `http://127.0.0.1:8722/callback?token=test&username=you&state={that state}` in a browser.
 4. Load a save and sleep — the console logs the upload attempt (it fails against a fake
-   `BaseUrl`, which still proves the save → payload → HTTP path works).
+   `SaveUrl`, which still proves the save → payload → HTTP path works).
