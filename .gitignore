@@ -13,3 +13,4 @@ obj/
 # design doc and Claude instructions in the public repo)
 CLAUDE.md
 implement.md
+echo-server.ps1
