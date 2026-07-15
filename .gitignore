@@ -1,0 +1,15 @@
+# Build output — the compiled DLL, caches, and the release zip all land here.
+# Ship releases by attaching bin/Debug/net6.0/SaveFetch <version>.zip to a
+# GitHub release, not by committing it.
+bin/
+obj/
+
+# IDE/editor state
+.vs/
+.vscode/
+*.user
+
+# Internal docs (pre-existing entries — delete these two lines if you want the
+# design doc and Claude instructions in the public repo)
+CLAUDE.md
+implement.md

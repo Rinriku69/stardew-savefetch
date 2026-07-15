@@ -1,0 +1,12 @@
+{
+  "$schema": "https://smapi.io/schemas/manifest.json",
+  "UniqueID": "siripoohkim.SaveFetch",
+  "Name": "SaveFetch",
+  "Author": "Rinriku69",
+  "Version": "1.0.0",
+  "Description": "Reads and exports Stardew Valley save data.",
+  "MinimumApiVersion": "4.0.0",
+  "MinimumGameVersion": "1.6.0",
+  "EntryDll": "SaveFetch.dll",
+  "UpdateKeys": []
+}
