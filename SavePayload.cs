@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using StardewModdingAPI;
 using StardewValley;
 
 namespace SaveFetch
@@ -13,6 +14,16 @@ namespace SaveFetch
         public ulong SaveId { get; set; }
         public string FarmerName { get; set; } = "";
         public string FarmName { get; set; } = "";
+
+        /// <summary>Identifies the farmer within the save. The server already knows which website
+        /// account sent this (the JWT's subject); this is the in-game identity, which the farmer
+        /// name can't safely stand in for.</summary>
+        public long UniqueMultiplayerID { get; set; }
+
+        /// <summary>Whether this client hosts the farm. Marks the row the server should trust for
+        /// world-level values (money is a shared wallet, so every client reports the same figure).</summary>
+        public bool IsHost { get; set; }
+
         public string GameVersion { get; set; } = "";
         public string ModVersion { get; set; } = "";
         public DateTime SentAtUtc { get; set; }
@@ -38,6 +49,8 @@ namespace SaveFetch
                 SaveId = Game1.uniqueIDForThisGame,
                 FarmerName = player.Name,
                 FarmName = player.farmName.Value,
+                UniqueMultiplayerID = player.UniqueMultiplayerID,
+                IsHost = Context.IsMainPlayer,
                 GameVersion = Game1.version,
                 ModVersion = modVersion,
                 SentAtUtc = DateTime.UtcNow,

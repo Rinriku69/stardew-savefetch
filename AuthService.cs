@@ -23,7 +23,7 @@ namespace SaveFetch
         private readonly IMonitor monitor;
         private readonly ModConfig config;
         private readonly TokenStore tokens;
-        private int loginInProgress; // interlocked flag so two savefetch_login calls can't race
+        private int loginInProgress; 
 
         public AuthService(IMonitor monitor, ModConfig config, TokenStore tokens)
         {
@@ -50,14 +50,12 @@ namespace SaveFetch
                 listener.Prefixes.Add($"http://127.0.0.1:{port}/callback/");
                 listener.Start();
 
-                // use & if the configured URL already carries a query string, ? otherwise
                 string separator = this.config.LoginUrl.Contains('?') ? "&" : "?";
                 string loginUrl = $"{this.config.LoginUrl.TrimEnd('/')}{separator}port={port}&state={Uri.EscapeDataString(state)}";
                 this.monitor.Log("Opening your browser to log in...", LogLevel.Info);
                 this.monitor.Log($"If it doesn't open, visit: {loginUrl}", LogLevel.Info);
                 Process.Start(new ProcessStartInfo(loginUrl) { UseShellExecute = true });
 
-                // wait for the site to redirect back to us, but give up after the timeout
                 var contextTask = listener.GetContextAsync();
                 var completed = await Task.WhenAny(contextTask, Task.Delay(LoginTimeout));
                 if (completed != contextTask)
@@ -95,14 +93,13 @@ namespace SaveFetch
             }
         }
 
-        /// <summary>Random one-time value the callback must echo back, so another local process can't spoof a token.</summary>
+
         private static string GenerateState()
         {
             byte[] bytes = RandomNumberGenerator.GetBytes(32);
             return Convert.ToHexString(bytes);
         }
 
-        /// <summary>Ask the OS for a free TCP port by binding to port 0 and reading what it assigned.</summary>
         private static int GetFreePort()
         {
             var probe = new TcpListener(IPAddress.Loopback, 0);

@@ -17,7 +17,7 @@ namespace SaveFetch
             this.config = helper.ReadConfig<ModConfig>();
             this.tokens = new TokenStore(helper.Data);
             this.auth = new AuthService(this.Monitor, this.config, this.tokens);
-            this.api = new ApiClient(this.config.SaveUrl);
+            this.api = new ApiClient(this.config.SaveUrl, this.config.RefreshUrl);
 
             helper.Events.GameLoop.GameLaunched += this.OnGameLaunched;
             helper.Events.GameLoop.Saved += this.OnSaved;
@@ -43,26 +43,52 @@ namespace SaveFetch
             // build on the game thread (reads live game state), upload on a background task
             // so a slow server can't freeze the game
             SavePayload payload = SavePayload.Build(this.ModManifest.Version.ToString());
-            string token = this.tokens.Get()!.AccessToken;
 
-            Task.Run(async () =>
+            Task.Run(() => this.UploadAsync(payload));
+        }
+
+        /// <summary>Upload the payload, refreshing the access token once if the server rejects it.</summary>
+        private async Task UploadAsync(SavePayload payload)
+        {
+            AuthData? auth = this.tokens.Get();
+            if (auth == null)
+                return;
+
+            var (result, detail) = await this.api.UploadSaveAsync(payload, auth.AccessToken);
+
+            // access tokens are short-lived, so a 401 usually means "expired", not "wrong user".
+            if (result == UploadResult.Unauthorized)
             {
-                var (result, detail) = await this.api.UploadSaveAsync(payload, token);
-                this.lastUploadResult = $"{result} ({detail})";
+                this.Monitor.Log("Access token rejected; trying to refresh it.", LogLevel.Trace);
+                string? refreshed = await this.api.RefreshTokenAsync(auth.AccessToken);
 
-                switch (result)
+                if (refreshed == null)
                 {
-                    case UploadResult.Success:
-                        this.Monitor.Log($"Save uploaded ({payload.Season} {payload.Day}, year {payload.Year}).", LogLevel.Info);
-                        break;
-                    case UploadResult.Unauthorized:
-                        this.Monitor.Log("Save upload rejected: your login expired. Run `savefetch_login` to log in again.", LogLevel.Warn);
-                        break;
-                    default:
-                        this.Monitor.Log($"Save upload failed: {detail}", LogLevel.Warn);
-                        break;
+                    this.lastUploadResult = $"{result} ({detail})";
+                    this.Monitor.Log("Save upload rejected and the login could not be refreshed. Run `savefetch_login` to log in again.", LogLevel.Warn);
+                    return;
                 }
-            });
+
+                this.tokens.UpdateAccessToken(refreshed);
+                this.Monitor.Log("Login refreshed.", LogLevel.Trace);
+
+                (result, detail) = await this.api.UploadSaveAsync(payload, refreshed);
+            }
+
+            this.lastUploadResult = $"{result} ({detail})";
+
+            switch (result)
+            {
+                case UploadResult.Success:
+                    this.Monitor.Log($"Save uploaded ({payload.Season} {payload.Day}, year {payload.Year}).", LogLevel.Info);
+                    break;
+                case UploadResult.Unauthorized:
+                    this.Monitor.Log("Save upload rejected: your login expired. Run `savefetch_login` to log in again.", LogLevel.Warn);
+                    break;
+                default:
+                    this.Monitor.Log($"Save upload failed: {detail}", LogLevel.Warn);
+                    break;
+            }
         }
 
         private void OnLoginCommand(string command, string[] args)

@@ -43,6 +43,15 @@ namespace SaveFetch
             this.data.WriteGlobalData(Key, this.cached);
         }
 
+        public void UpdateAccessToken(string accessToken)
+        {
+            if (this.cached == null)
+                return;
+
+            this.cached.AccessToken = accessToken;
+            this.data.WriteGlobalData(Key, this.cached);
+        }
+
         public void Clear()
         {
             this.cached = null;

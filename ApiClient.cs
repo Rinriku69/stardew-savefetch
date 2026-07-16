@@ -4,6 +4,7 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 
 namespace SaveFetch
@@ -20,18 +21,18 @@ namespace SaveFetch
     {
         private static readonly HttpClient http = new() { Timeout = TimeSpan.FromSeconds(30) };
 
-        // camelCase property names so the JSON matches the schema in implement.md
-        // (and Laravel's usual conventions) instead of C#'s PascalCase
         private static readonly JsonSerializerOptions jsonOptions = new()
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase
         };
 
         private readonly string saveUrl;
+        private readonly string refreshUrl;
 
-        public ApiClient(string saveUrl)
+        public ApiClient(string saveUrl, string refreshUrl)
         {
             this.saveUrl = saveUrl;
+            this.refreshUrl = refreshUrl;
         }
 
         public async Task<(UploadResult Result, string Detail)> UploadSaveAsync(SavePayload payload, string accessToken)
@@ -62,7 +63,38 @@ namespace SaveFetch
             }
         }
 
+  
+        /// <returns>The new access token, or null if the refresh window has closed or the call failed.</returns>
+        public async Task<string?> RefreshTokenAsync(string oldToken)
+        {
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Post, this.refreshUrl);
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", oldToken);
+                request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+                request.Content = new StringContent(string.Empty, Encoding.UTF8, "application/json");
+
+                using HttpResponseMessage response = await http.SendAsync(request);
+                if (!response.IsSuccessStatusCode)
+                    return null;
+
+                string json = await response.Content.ReadAsStringAsync();
+                return JsonSerializer.Deserialize<RefreshResponse>(json, jsonOptions)?.AccessToken;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
         private static string Truncate(string value, int max)
             => value.Length <= max ? value : value[..max] + "…";
+
+        /// <summary>The token half of the server's refresh response.</summary>
+        private class RefreshResponse
+        {
+            [JsonPropertyName("access_token")]
+            public string? AccessToken { get; set; }
+        }
     }
 }
