@@ -18,6 +18,14 @@ works silently in the background.
 
 If you're not logged in, the mod does nothing except print a reminder at launch.
 
+### Multiplayer
+
+Install it on every player's machine and have each person run `savefetch_login` under their own
+account. The mod reads live game state rather than the save file, so a farmhand's copy uploads
+**their own** farmer — skills, playtime, fish caught — even though only the host has a save file
+on disk. Shared values (money, farm name, the in-game date) are naturally the same in every
+player's upload; the `isHost` flag marks which one the server should treat as authoritative.
+
 ## Installation
 
 1. Install [SMAPI](https://smapi.io) 4.0+ (game version 1.6+).
@@ -32,6 +40,7 @@ If you're not logged in, the mod does nothing except print a reminder at launch.
 | -------------- | -------------------------------- | ---------------------------------------------------------------------------- |
 | `LoginUrl`     | `https://example.test/mod-auth`  | Full URL of the website's mod-login page — the browser opens here with `?port=&state=` appended. **You must change this** — the default is a placeholder. |
 | `SaveUrl`      | `https://example.test/api/saves` | Full URL the save summary is POSTed to (Bearer auth). Separate from `LoginUrl` so the API can live on a different host or path. |
+| `RefreshUrl`   | `https://example.test/api/auth/jwt/refresh` | Full URL of the token refresh endpoint. If an upload is rejected because the access token expired, the mod swaps it for a fresh one here and retries — so you don't have to log in again every few hours. |
 | `CallbackPort` | `0`                              | Fixed TCP port for the login callback listener. `0` picks any free port automatically; set a fixed one only if you need a firewall rule or are testing by hand. |
 
 The access token is deliberately **not** in this file — see step 2 above.
@@ -48,8 +57,9 @@ The access token is deliberately **not** in this file — see step 2 above.
 
 A curated summary, not the raw save file: farmer/farm name, save ID, in-game date, days
 played, playtime, money (current + lifetime), the five skill levels, and a few stats (items
-crafted/cooked, fish caught, monsters killed), plus game/mod version and a timestamp. See
-[`SavePayload.cs`](SavePayload.cs) for the exact fields.
+crafted/cooked, fish caught, monsters killed), plus your in-game player ID, whether you're the
+host, game/mod version and a timestamp. See [`SavePayload.cs`](SavePayload.cs) for the exact
+fields.
 
 ## Building from source
 
@@ -66,14 +76,17 @@ your `Mods` folder, and produces a release zip under `bin/Debug/net6.0/`.
 
 ## Server API
 
-The website must expose two routes (the paths below are suggestions — the mod reads the full
+The website must expose three routes (the paths below are suggestions — the mod reads the full
 URLs from `config.json`, so name them whatever you like):
 
 - `GET /mod-auth?port=&state=` — web route: log the user in via the normal web session, issue
-  a personal access token, then redirect to
+  an access token, then redirect to
   `http://127.0.0.1:{port}/callback?token=...&username=...&state=...` (the `state` value must
   be echoed back unchanged — the mod rejects the callback otherwise).
 - `POST /api/saves` — API route accepting the JSON payload with `Authorization: Bearer {token}`.
+  Return `401` if the token has expired; the mod will refresh and retry once.
+- `POST /api/auth/jwt/refresh` — API route accepting the expired token as a Bearer header and
+  returning `{"access_token": "..."}`.
 
 ## Testing without a server
 
