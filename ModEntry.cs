@@ -1,6 +1,8 @@
+using System;
 using System.Threading.Tasks;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
+using StardewValley;
 
 namespace SaveFetch
 {
@@ -8,6 +10,7 @@ namespace SaveFetch
     {
         private ModConfig config = null!;
         private TokenStore tokens = null!;
+        private AvatarStateStore avatarState = null!;
         private AuthService auth = null!;
         private ApiClient api = null!;
         private string lastUploadResult = "(no upload yet)";
@@ -16,6 +19,7 @@ namespace SaveFetch
         {
             this.config = helper.ReadConfig<ModConfig>();
             this.tokens = new TokenStore(helper.Data);
+            this.avatarState = new AvatarStateStore(helper.Data);
             this.auth = new AuthService(this.Monitor, this.config, this.tokens);
             this.api = new ApiClient(this.config.SaveUrl, this.config.RefreshUrl);
 
@@ -40,44 +44,31 @@ namespace SaveFetch
             if (!this.tokens.IsLoggedIn)
                 return;
 
-            // build on the game thread (reads live game state), upload on a background task
-            // so a slow server can't freeze the game
+            // build/render on the game thread (reads live game state, and rendering the sprite
+            // touches the GraphicsDevice), upload on a background task so a slow server can't
+            // freeze the game
             SavePayload payload = SavePayload.Build(this.ModManifest.Version.ToString());
 
-            Task.Run(() => this.UploadAsync(payload));
+            string appearanceHash = AppearanceSnapshot.ComputeHash(Game1.player);
+            byte[]? avatarPng = appearanceHash != this.avatarState.LastSentAppearanceHash
+                ? PlayerSpriteRenderer.RenderIdlePortrait(Game1.player)
+                : null;
+
+            Task.Run(() => this.UploadAsync(payload, avatarPng, appearanceHash));
         }
 
-        /// <summary>Upload the payload, refreshing the access token once if the server rejects it.</summary>
-        private async Task UploadAsync(SavePayload payload)
+        private async Task UploadAsync(SavePayload payload, byte[]? avatarPng, string appearanceHash)
         {
             AuthData? auth = this.tokens.Get();
             if (auth == null)
                 return;
 
-            var (result, detail) = await this.api.UploadSaveAsync(payload, auth.AccessToken);
+            var (saveResult, saveDetail, accessToken) = await this.UploadWithRefreshAsync(
+                token => this.api.UploadSaveAsync(payload, token), auth.AccessToken);
 
-            // access tokens are short-lived, so a 401 usually means "expired", not "wrong user".
-            if (result == UploadResult.Unauthorized)
-            {
-                this.Monitor.Log("Access token rejected; trying to refresh it.", LogLevel.Trace);
-                string? refreshed = await this.api.RefreshTokenAsync(auth.AccessToken);
+            this.lastUploadResult = $"{saveResult} ({saveDetail})";
 
-                if (refreshed == null)
-                {
-                    this.lastUploadResult = $"{result} ({detail})";
-                    this.Monitor.Log("Save upload rejected and the login could not be refreshed. Run `savefetch_login` to log in again.", LogLevel.Warn);
-                    return;
-                }
-
-                this.tokens.UpdateAccessToken(refreshed);
-                this.Monitor.Log("Login refreshed.", LogLevel.Trace);
-
-                (result, detail) = await this.api.UploadSaveAsync(payload, refreshed);
-            }
-
-            this.lastUploadResult = $"{result} ({detail})";
-
-            switch (result)
+            switch (saveResult)
             {
                 case UploadResult.Success:
                     this.Monitor.Log($"Save uploaded ({payload.Season} {payload.Day}, year {payload.Year}).", LogLevel.Info);
@@ -86,9 +77,54 @@ namespace SaveFetch
                     this.Monitor.Log("Save upload rejected: your login expired. Run `savefetch_login` to log in again.", LogLevel.Warn);
                     break;
                 default:
-                    this.Monitor.Log($"Save upload failed: {detail}", LogLevel.Warn);
+                    this.Monitor.Log($"Save upload failed: {saveDetail}", LogLevel.Warn);
                     break;
             }
+
+            if (avatarPng == null)
+                return;
+
+            // reuse whatever token the save upload ended up with, so a token refreshed above
+            // isn't refreshed a second time for this second request
+            var (avatarResult, avatarDetail, _) = await this.UploadWithRefreshAsync(
+                token => this.api.UploadAvatarAsync(avatarPng, this.config.AvatarUrl, token), accessToken);
+
+            switch (avatarResult)
+            {
+                case UploadResult.Success:
+                    this.avatarState.SetLastSentAppearanceHash(appearanceHash);
+                    this.Monitor.Log("Avatar uploaded.", LogLevel.Info);
+                    break;
+                case UploadResult.Unauthorized:
+                    this.Monitor.Log("Avatar upload rejected: your login expired. Run `savefetch_login` to log in again.", LogLevel.Warn);
+                    break;
+                default:
+                    this.Monitor.Log($"Avatar upload failed: {avatarDetail}", LogLevel.Warn);
+                    break;
+            }
+        }
+
+        /// <summary>Runs <paramref name="upload"/> with the current access token, refreshing it
+        /// once and retrying if the server rejects it. Shared by both upload calls in
+        /// <see cref="UploadAsync"/> so the refresh dance (access tokens are short-lived, so a
+        /// 401 usually means "expired", not "wrong user") isn't duplicated per endpoint.</summary>
+        private async Task<(UploadResult Result, string Detail, string AccessToken)> UploadWithRefreshAsync(
+            Func<string, Task<(UploadResult Result, string Detail)>> upload, string accessToken)
+        {
+            var (result, detail) = await upload(accessToken);
+            if (result != UploadResult.Unauthorized)
+                return (result, detail, accessToken);
+
+            this.Monitor.Log("Access token rejected; trying to refresh it.", LogLevel.Trace);
+            string? refreshed = await this.api.RefreshTokenAsync(accessToken);
+            if (refreshed == null)
+                return (result, detail, accessToken);
+
+            this.tokens.UpdateAccessToken(refreshed);
+            this.Monitor.Log("Login refreshed.", LogLevel.Trace);
+
+            (result, detail) = await upload(refreshed);
+            return (result, detail, refreshed);
         }
 
         private void OnLoginCommand(string command, string[] args)

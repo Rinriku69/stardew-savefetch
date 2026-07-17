@@ -15,6 +15,11 @@ namespace SaveFetch
         /// Bearer header when an upload returns 401; the response supplies a replacement.</summary>
         public string RefreshUrl { get; set; } = "https://example.test/api/auth/jwt/refresh";
 
+        /// <summary>Full URL of the API endpoint that receives the rendered player sprite
+        /// (POST multipart/form-data, Bearer auth). Separate from SaveUrl so the image — only
+        /// sent when the character's appearance changes — doesn't bloat every save payload.</summary>
+        public string AvatarUrl { get; set; } = "https://example.test/api/avatar";
+
         /// <summary>Fixed port for the login callback listener; 0 picks any free port.</summary>
         public int CallbackPort { get; set; } = 0;
     }

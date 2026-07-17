@@ -87,6 +87,37 @@ namespace SaveFetch
             }
         }
 
+        public async Task<(UploadResult Result, string Detail)> UploadAvatarAsync(byte[] pngBytes, string avatarUrl, string accessToken)
+        {
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Post, avatarUrl);
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+                request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+                using var content = new MultipartFormDataContent();
+                var imageContent = new ByteArrayContent(pngBytes);
+                imageContent.Headers.ContentType = new MediaTypeHeaderValue("image/png");
+                content.Add(imageContent, "avatar", "avatar.png");
+                request.Content = content;
+
+                using HttpResponseMessage response = await http.SendAsync(request);
+
+                if (response.IsSuccessStatusCode)
+                    return (UploadResult.Success, $"HTTP {(int)response.StatusCode}");
+
+                if (response.StatusCode == HttpStatusCode.Unauthorized)
+                    return (UploadResult.Unauthorized, "HTTP 401");
+
+                string body = await response.Content.ReadAsStringAsync();
+                return (UploadResult.Failed, $"HTTP {(int)response.StatusCode}: {Truncate(body, 200)}");
+            }
+            catch (Exception ex)
+            {
+                return (UploadResult.Failed, ex.Message);
+            }
+        }
+
         private static string Truncate(string value, int max)
             => value.Length <= max ? value : value[..max] + "…";
 
