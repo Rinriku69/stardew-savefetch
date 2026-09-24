@@ -1,6 +1,6 @@
 # SaveFetch
 
-A [SMAPI](https://smapi.io) mod for Stardew Valley that uploads a summary of your save to a
+A [SaveFetch](https://www.nexusmods.com/stardewvalley/mods/49400) mod for Stardew Valley that uploads a summary of your save to a
 companion website every time the game saves. Log in once through your browser — after that it
 works silently in the background.
 
